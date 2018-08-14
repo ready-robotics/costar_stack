@@ -23,6 +23,9 @@ add_service_files(
   Save.srv
   Load.srv
   List.srv
+  SaveTarball.srv
+  LoadTarball.srv
+  ListTarball.srv
   AddType.srv
   GetPath.srv
   GetTypePath.srv

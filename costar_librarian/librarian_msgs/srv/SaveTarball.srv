@@ -1,0 +1,6 @@
+string id
+string type
+string[] filenames
+string[] filedata
+---
+librarian_msgs/Status status

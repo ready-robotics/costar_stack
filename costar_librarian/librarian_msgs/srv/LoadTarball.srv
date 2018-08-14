@@ -1,0 +1,6 @@
+string id
+string type
+string requested_filename
+---
+string text
+librarian_msgs/Status status

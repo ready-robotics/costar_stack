@@ -1,0 +1,5 @@
+string id
+string type
+---
+string[] entries
+librarian_msgs/Status status

@@ -3,10 +3,14 @@ import rospy
 import os
 import roslib
 import rosparam
+import StringIO
+import tarfile
+import time
 from librarian_msgs.msg import *
 from librarian_msgs.srv import *
 from os.path import expanduser
 from os.path import join
+from ready_debug_tools.profile_helpers import ScopedProfile
 roslib.load_manifest("rosparam")
 
 
@@ -39,9 +43,24 @@ class Librarian(object):
             self._get_path_srv = rospy.Service('librarian/get_path', GetPath, self.create_path)
             self._get_path_to_type_srv = rospy.Service('librarian/get_path_to_type', GetTypePath, self.create_type_path)
             self._delete_srv = rospy.Service('librarian/delete', Delete, self.delete)
+            self._save_tarball_service = rospy.Service('/librarian/save_tarball', SaveTarball, self.save_tarball)
+            self._list_tarball_service = rospy.Service('/librarian/list_tarball', ListTarball, self.list_tarball)
+            self._load_tarball_service = rospy.Service('/librarian/load_tarball', LoadTarball, self.load_tarball)
 
         self.init()
         self.load_records()
+
+    def _get_type_root(self, requested_type):
+        """
+            requested_type (str): The costar subdirectory used to append onto the root.
+
+            Returns:
+                str: The absolute path to the requested_type's directory
+        """
+        return join(self._root, requested_type)
+
+    def _get_tar_filename(self, requested_type, id):
+        return join(self._get_type_root(requested_type), id) + '.tar'
 
     '''
     create_path()
@@ -94,7 +113,7 @@ class Librarian(object):
     def init(self):
         if not os.path.exists(self._root):
             os.mkdir(self._root)
-    
+
     '''
     delete()
     Remove an item tracked by librarian.
@@ -117,7 +136,7 @@ class Librarian(object):
             else:
                 os.remove(filename)
                 resp.status.result = Status.SUCCESS
-        
+
         return resp
 
     '''
@@ -152,7 +171,75 @@ class Librarian(object):
                 out.close()
 
                 resp.status.result = Status.SUCCESS
-        
+
+        return resp
+
+
+    '''
+    save_tarball()
+    Save a list of files to a single archive
+    '''
+    def save_tarball(self, req):
+        with ScopedProfile('save_tarball'):
+            filename = self._get_tar_filename(req.type, req.id)
+            tar = tarfile.open(filename, 'w')
+            for index, name in enumerate(req.filenames):
+                string_buffer = StringIO.StringIO(req.filedata[index])
+                tar_info = tarfile.TarInfo(name=name)
+                tar_info.size = string_buffer.len
+                tar_info.mtime = time.time()
+                tar.addfile(tar_info, fileobj=string_buffer)
+
+            tar.close()
+        resp = SaveTarballResponse()
+        resp.status.result = Status.SUCCESS
+        return resp
+
+    '''
+    list_tarball()
+    Return a list of filenames contained within the tarball
+    '''
+    def list_tarball(self, req):
+        names = list()
+        with ScopedProfile('list_tarball'):
+            filename = self._get_tar_filename(req.type, req.id)
+            if not os.path.exists(filename):
+                resp = ListTarballResponse()
+                resp.status.result = Status.FAILURE
+                resp.status.error = Status.TYPE_MISSING
+                return resp
+
+            with tarfile.open(filename, 'r') as tar:
+                names = tar.getnames()
+
+        resp = ListTarballResponse()
+        resp.status.result = Status.SUCCESS
+        resp.entries = names
+        return resp
+
+    '''
+    load_tarball()
+    Open and read a single file from the tarball
+    '''
+    def load_tarball(self, req):
+        text = None
+        with ScopedProfile('load_tarball'):
+            filename = self._get_tar_filename(req.type, req.id)
+            if not os.path.exists(filename):
+                resp = LoadTarballResponse()
+                resp.status.result = Status.FAILURE
+                resp.status.error = Status.TYPE_MISSING
+                return resp
+
+
+            with tarfile.open(filename, 'r') as tar:
+                tar_info = tar.getmember(req.requested_filename)
+                file_object = tar.extractfile(tar_info)
+                text = file_object.read()
+
+        resp = LoadTarballResponse()
+        resp.status.result = Status.SUCCESS
+        resp.text = text
         return resp
 
     '''
@@ -261,7 +348,7 @@ class Librarian(object):
             resp.entries = os.listdir(path)
             resp.status.result = Status.SUCCESS
             resp.status.error = Status.NO_ERROR
-        
+
         return resp
 
     def write_records(self):
