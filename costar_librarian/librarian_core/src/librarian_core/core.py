@@ -231,9 +231,14 @@ class Librarian(object):
                 resp.status.error = Status.TYPE_MISSING
                 return resp
 
-
             with tarfile.open(filename, 'r') as tar:
-                tar_info = tar.getmember(req.requested_filename)
+                try:
+                    tar_info = tar.getmember(req.requested_filename)
+                except KeyError as exc:
+                    resp = LoadTarballResponse()
+                    resp.status.result = Status.FAILURE
+                    return resp
+
                 file_object = tar.extractfile(tar_info)
                 text = file_object.read()
 
